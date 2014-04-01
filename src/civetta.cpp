@@ -82,7 +82,7 @@ int Server::globalHandler(struct mg_connection *conn, void *cbdata) {
   return ((Server *)cbdata)->requestHandler(conn, cbdata);
 }
 
-Server::Server(const char **options, const struct mg_callbacks *_callbacks) : context(0), postData(0) {
+Server::Server(const char **options, const struct mg_callbacks *_callbacks) : context(0), prefix("") {
   struct mg_callbacks callbacks;
   memset(&callbacks, 0, sizeof(callbacks));
   if (_callbacks) {
@@ -101,6 +101,10 @@ Server::~Server() {
   close();
 }
 
+void Server::setPrefix(string prefix_){
+  prefix = prefix_;
+}
+
 void Server::closeHandler(struct mg_connection *conn) {
   struct mg_request_info *request_info = mg_get_request_info(conn);
   assert(request_info != NULL);
@@ -109,10 +113,6 @@ void Server::closeHandler(struct mg_connection *conn) {
 
   if (me->userCloseHandler)
     me->userCloseHandler(conn);
-  if (me->postData) {
-    free(me->postData);
-    me->postData = 0;
-  }
 }
 
 void Server::close() {
@@ -122,39 +122,43 @@ void Server::close() {
   }
 }
 
-int Server::getCookie(struct mg_connection *conn, const std::string &cookieName, std::string &cookieValue) {
+int Request::getCookie(const std::string &cookieName, std::string &cookieValue) {
   // Maximum cookie length as per microsoft is 4096. http://msdn.microsoft.com/en-us/library/ms178194.aspx
   char _cookieValue[4096];
-  const char *cookie = mg_get_header(conn, "Cookie");
+  const char *cookie = mg_get_header(connection, "Cookie");
   int lRead = mg_get_cookie(cookie, cookieName.c_str(), _cookieValue, sizeof(_cookieValue));
   cookieValue.clear();
   cookieValue.append(_cookieValue);
   return lRead;
 }
 
-const char *Server::getHeader(struct mg_connection *conn, const std::string &headerName) {
-  return mg_get_header(conn, headerName.c_str());
+const char *Request::getHeader(const std::string &headerName) {
+  return mg_get_header(connection, headerName.c_str());
 }
 
-bool Server::getParam(struct mg_connection *conn, const char *name, std::string &dst, size_t occurrence) {
+const char* Request::getPostData(){
+  return postData;
+}
+
+bool Request::getParam(const char *name, std::string &dst, size_t occurrence) {
   const char *formParams = NULL;
-  struct mg_request_info *ri = mg_get_request_info(conn);
+  struct mg_request_info *ri = mg_get_request_info(connection);
   assert(ri != NULL);
   Server *me = (Server *)(ri->user_data);
   assert(me != NULL);
 
-  if (me->postData != NULL) {
-    formParams = me->postData;
+  if (postData != NULL) {
+    formParams = postData;
   } else {
-    const char *con_len_str = mg_get_header(conn, "Content-Length");
+    const char *con_len_str = mg_get_header(connection, "Content-Length");
     if (con_len_str) {
       unsigned long con_len = atoi(con_len_str);
       if (con_len > 0) {
-        me->postData = (char *)malloc(con_len);
-        if (me->postData != NULL) {
+        postData = (char *)malloc(con_len);
+        if (postData != NULL) {
           // malloc may fail for huge requests
-          mg_read(conn, me->postData, con_len);
-          formParams = me->postData;
+          mg_read(connection, postData, con_len);
+          formParams = postData;
         }
       }
     }
@@ -167,7 +171,7 @@ bool Server::getParam(struct mg_connection *conn, const char *name, std::string 
   return false;
 }
 
-bool Server::getParam(const char *data, size_t data_len, const char *name, std::string &dst, size_t occurrence) {
+bool Request::getParam(const char *data, size_t data_len, const char *name, std::string &dst, size_t occurrence) {
   const char *p, *e, *s;
   size_t name_len;
 
@@ -196,7 +200,7 @@ bool Server::getParam(const char *data, size_t data_len, const char *name, std::
 }
 
 Callback Server::route(string httpMethod, string url, Callback callback) {
-  string key = httpMethod + ":" + url + "/?";
+  string key = httpMethod + ":" + prefix + url + "/?";
   routes[key] = callback;
   return callback;
 }
@@ -224,7 +228,14 @@ int Server::requestHandler(struct mg_connection *conn, void *cbdata) {
 }
 
 Request::Request(struct mg_connection *connection_, smatch matches_)
-    : connection(connection_), matches(matches_), request_info(mg_get_request_info(connection_)) {
+    : connection(connection_), matches(matches_), request_info(mg_get_request_info(connection_)), postData(0) {
+}
+
+Request::~Request(){  
+  if (postData) {
+    free(postData);
+    postData = 0;
+  }
 }
 
 smatch Request::getMatches() {

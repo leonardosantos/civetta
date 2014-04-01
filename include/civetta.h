@@ -64,6 +64,7 @@ class CIVETTA_EXPORT Request {
     uri
   */
   Request(struct mg_connection *connection, std::smatch matches);
+  virtual ~Request();
 
   /**
     Information about the request.
@@ -76,9 +77,70 @@ class CIVETTA_EXPORT Request {
   */
   std::smatch getMatches();
 
+  /**
+     Gets a cookie.
+     @param cookieName - cookie name to get the value from
+     @param cookieValue - cookie value is returned using this reference
+     @puts the cookie value string that matches the cookie name in the _cookieValue string.
+     @returns the size of the cookie value string read.
+  */
+  int getCookie(const std::string &cookieName, std::string &cookieValue);
+
+  /**
+     Gets a header.
+     @param headerName - header name to get the value from
+     @returns a char array whcih contains the header value as
+     string
+  */
+  const char *getHeader(const std::string &headerName);
+
+  /**
+     Gets a param.
+     Returns a query paramter contained in the supplied buffer.
+     The occurance value is a zero-based index of a particular key name.
+     This should nto be confused with the index over all of the keys.
+     @param name the key to search for
+     @param the destination string
+     @param occurrence the occurrence of the selected name in the query (0 based).
+     @return true of key was found
+  */
+  bool getParam(const char *name, std::string &dst, size_t occurrence = 0);
+
+  /**
+     Gets a param.
+     Returns a query paramter contained in the supplied buffer.
+     The occurance value is a zero-based index of a particular key name.
+     This should nto be confused with the index over all of the keys.
+     @param data the query string
+     @param name the key to search for
+     @param the destination string
+     @param occurrence the occurrence of the selected name in the query (0 based).
+     @return true of key was found
+   */
+  static bool getParam(const std::string &data, const char *name, std::string &dst, size_t occurrence = 0) {
+    return getParam(data.c_str(), data.length(), name, dst, occurrence);
+  }
+
+  /**
+     Gets a param.
+     Returns a query paramter contained in the supplied buffer.
+     The occurance value is a zero-based index of a particular key name.
+     This should nto be confused with the index over all of the keys.
+     @param data the query string
+     @param length length of the query string
+     @param name the key to search for
+     @param the destination string
+     @param occurrence the occurrence of the selected name in the query (0 based).
+     @return true of key was found
+   */
+  static bool getParam(const char *data, size_t data_len, const char *name, std::string &dst, size_t occurrence = 0);
+
+  const char* getPostData();
+
  protected:
+  char *postData;
   std::smatch matches;
-  const struct mg_connection *connection;
+  struct mg_connection *connection;
 };
 
 class CIVETTA_EXPORT Response : public std::ostringstream {
@@ -168,78 +230,22 @@ class CIVETTA_EXPORT Server {
   const struct mg_context *getContext() const { return context; }
 
   /**
-     Gets a cookie from a connection.
-     @param conn - the connection information
-     @param cookieName - cookie name to get the value from
-     @param cookieValue - cookie value is returned using this reference
-     @puts the cookie value string that matches the cookie name in the _cookieValue string.
-     @returns the size of the cookie value string read.
-  */
-  static int getCookie(struct mg_connection *conn, const std::string &cookieName, std::string &cookieValue);
-
-  /**
-     Gets a header from a connection.
-     @param conn - the connection information
-     @param headerName - header name to get the value from
-     @returns a char array whcih contains the header value as
-     string
-  */
-  static const char *getHeader(struct mg_connection *conn, const std::string &headerName);
-
-  /**
-     Gets a param from a connection.
-     Returns a query paramter contained in the supplied buffer.
-     The occurance value is a zero-based index of a particular key name.
-     This should nto be confused with the index over all of the keys.
-     @param data the query string
-     @param name the key to search for
-     @param the destination string
-     @param occurrence the occurrence of the selected name in the query (0 based).
-     @return true of key was found
-  */
-  static bool getParam(struct mg_connection *conn, const char *name, std::string &dst, size_t occurrence = 0);
-
-  /**
-     Gets a param from a connection.
-     Returns a query paramter contained in the supplied buffer.
-     The occurance value is a zero-based index of a particular key name.
-     This should nto be confused with the index over all of the keys.
-     @param data the query string
-     @param name the key to search for
-     @param the destination string
-     @param occurrence the occurrence of the selected name in the query (0 based).
-     @return true of key was found
-   */
-  static bool getParam(const std::string &data, const char *name, std::string &dst, size_t occurrence = 0) {
-    return getParam(data.c_str(), data.length(), name, dst, occurrence);
-  }
-
-  /**
-     Gets a param from a connection.
-     Returns a query paramter contained in the supplied buffer.
-     The occurance value is a zero-based index of a particular key name.
-     This should nto be confused with the index over all of the keys.
-     @param data the query string
-     @param length length of the query string
-     @param name the key to search for
-     @param the destination string
-     @param occurrence the occurrence of the selected name in the query (0 based).
-     @return true of key was found
-   */
-  static bool getParam(const char *data, size_t data_len, const char *name, std::string &dst, size_t occurrence = 0);
-
-  /**
      Registers a route to the server
      @param string the method
      @param string the url path
      @param Callback the request handler for this route
    */
   Callback route(std::string httpMethod, std::string url, Callback callback);
+  
+  /**
+     Sets the routes prefix.
+   */
+  void setPrefix(std::string prefix);
 
  protected:
   struct mg_context *context;
-  char *postData;
   std::map<std::string, Callback> routes;
+  std::string prefix;
 
  private:
   /**

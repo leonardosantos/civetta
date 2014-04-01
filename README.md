@@ -1,4 +1,4 @@
-![Civetta](http://i.imgur.com/ewylnEI.jpg "Civetta") Civetta
+![Civetta](http://i.imgur.com/A4uaG8G.jpg "Civettictis civetta") Civetta
 =======
 
 Civetta is a C++11 layer above the great [https://github.com/bel2125/civetweb](https://github.com/bel2125/civetweb "civetweb"). It is also inspired by [https://github.com/Gregwar/mongoose-cpp](https://github.com/Gregwar/mongoose-cpp "mongoose-cpp"). Please refer to Civetweb for more information. License is [MIT](http://en.wikipedia.org/wiki/MIT_License).
@@ -6,7 +6,7 @@ Civetta is a C++11 layer above the great [https://github.com/bel2125/civetweb](h
 Usage
 -----
 
-	#include <civetta\Server.h>
+	#include <civetta/Server.h>
 	#include <iostream>
 	
 	int main(int argc, char *argv[]) {
