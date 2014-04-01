@@ -1,0 +1,363 @@
+/* Copyright (c) 2013-2014 the Civetta developers
+ * Copyright (c) 2004-2013 Sergey Lyubka
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in
+ * all copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN
+ * THE SOFTWARE.
+ */
+
+#ifndef _CIVETTA_H
+#define _CIVETTA_H
+
+#ifdef _MSC_VER
+#pragma once
+#pragma warning(disable : 4251) // Disable VC warning about dll linkage required
+                                // (for private members?)
+#pragma warning(disable                                                        \
+                : 4275) // Disable warning about non dll-interface base class.
+#endif
+
+#if defined(_MSC_VER) && defined(CIVETTA_USE_DLL)
+#ifdef CIVETTA_BUILD_DLL
+#define CIVETTA_EXPORT __declspec(dllexport)
+#else
+#define CIVETTA_EXPORT __declspec(dllimport)
+#endif
+#else
+#define CIVETTA_EXPORT
+#endif
+
+#include <map>
+#include <string>
+#include <functional>
+#include <iostream>
+#include <sstream>
+#include <vector>
+#include <regex>
+
+#include "civetweb.h"
+
+namespace Civetta {
+/**
+  Request is a wrapper for the clients requests
+*/
+class CIVETTA_EXPORT Request {
+public:
+  Request(struct mg_connection *connection, std::smatch matches);
+  std::smatch getMatches();
+
+protected:
+  std::smatch matches;
+  const struct mg_connection *connection;
+  const struct mg_request_info *request_info;
+};
+
+class CIVETTA_EXPORT Response : public std::ostringstream {
+public:
+  enum codes {
+    OK = 200,
+    NOT_FOUND = 404,
+    FORBIDDEN = 403,
+    SERVER_ERROR = 500,
+    BAD_REQUEST = 401
+  };
+  Response();
+
+  /**
+   * Test if the given header is present
+   *
+   * @param string the header key
+   *
+   * @return bool true if the header is set
+   */
+  bool hasHeader(std::string key);
+
+  /**
+   * Sets the header
+   *
+   * @param key the header key
+   *
+   * @param value the header value
+   */
+  void setHeader(std::string key, std::string value);
+
+  /**
+   * Get the data of the response, this will contain headers and
+   * body
+   *
+   * @return string the response data
+   */
+  std::string getData();
+
+  /**
+   * Gets the response body
+   *
+   * @return string the response body
+   */
+  std::string getBody();
+
+  /**
+   * Sets the cookie, note that you can only define one cookie by request
+   * for now
+   *
+   * @param string the key of the cookie
+   * @param string value the cookie value
+   */
+  void setCookie(std::string key, std::string value);
+
+  /**
+   * Sets the response code
+   */
+  void setCode(int code);
+
+protected:
+  int code;
+  std::map<std::string, std::string> headers;
+};
+
+typedef std::function<void(Request &request, Response &response)> Callback;
+
+/**
+ * Server
+ *
+ * Basic class for embedded web server.  This has a URL mapping built-in.
+ */
+class CIVETTA_EXPORT Server {
+public:
+  /**
+   * Constructor
+   *
+   * This automatically starts the sever.
+   * It is good practice to call getContext() after this in case there
+   * were errors starting the server.
+   *
+   * @param options - the web server options.
+   * @param callbacks - optional web server callback methods.
+   */
+  Server(const char **options, const struct mg_callbacks *callbacks = 0);
+
+  /**
+   * Destructor
+   */
+  virtual ~Server();
+
+  /**
+   * close()
+   *
+   * Stops server and frees resources.
+   */
+  void close();
+
+  /**
+   * getContext()
+   *
+   * @return the context or 0 if not running.
+   */
+  const struct mg_context *getContext() const { return context; }
+
+  /**
+   * getCookie(struct mg_connection *conn, const std::string &cookieName,
+   * std::string &cookieValue)
+   * @param conn - the connection information
+   * @param cookieName - cookie name to get the value from
+   * @param cookieValue - cookie value is returned using thiis reference
+   * @puts the cookie value string that matches the cookie name in the
+   * _cookieValue string.
+   * @returns the size of the cookie value string read.
+  */
+  static int getCookie(struct mg_connection *conn,
+                       const std::string &cookieName, std::string &cookieValue);
+
+  /**
+   * getHeader(struct mg_connection *conn, const std::string &headerName)
+   * @param conn - the connection information
+   * @param headerName - header name to get the value from
+   * @returns a char array whcih contains the header value as string
+  */
+  static const char *getHeader(struct mg_connection *conn,
+                               const std::string &headerName);
+
+  /**
+   * getParam(struct mg_connection *conn, const char *, std::string &, size_t)
+   *
+   * Returns a query paramter contained in the supplied buffer.  The
+   * occurance value is a zero-based index of a particular key name.  This
+   * should nto be confused with the index over all of the keys.
+   *
+   * @param data the query string
+   * @param name the key to search for
+   * @param the destination string
+   * @param occurrence the occurrence of the selected name in the query (0
+   *based).
+   * @return true of key was found
+   */
+  static bool getParam(struct mg_connection *conn, const char *name,
+                       std::string &dst, size_t occurrence = 0);
+
+  /**
+   * getParam(const std::string &, const char *, std::string &, size_t)
+   *
+   * Returns a query paramter contained in the supplied buffer.  The
+   * occurance value is a zero-based index of a particular key name.  This
+   * should nto be confused with the index over all of the keys.
+   *
+   * @param data the query string
+   * @param name the key to search for
+   * @param the destination string
+   * @param occurrence the occurrence of the selected name in the query (0
+   *based).
+   * @return true of key was found
+   */
+  static bool getParam(const std::string &data, const char *name,
+                       std::string &dst, size_t occurrence = 0) {
+    return getParam(data.c_str(), data.length(), name, dst, occurrence);
+  }
+
+  /**
+   * getParam(const char *, size_t, const char *, std::string &, size_t)
+   *
+   * Returns a query paramter contained in the supplied buffer.  The
+   * occurance value is a zero-based index of a particular key name.  This
+   * should nto be confused with the index over all of the keys.
+   *
+   * @param data the query string
+   * @param length length of the query string
+   * @param name the key to search for
+   * @param the destination string
+   * @param occurrence the occurrence of the selected name in the query (0
+   *based).
+   * @return true of key was found
+   */
+  static bool getParam(const char *data, size_t data_len, const char *name,
+                       std::string &dst, size_t occurrence = 0);
+
+  /**
+   * Registers a route to the controller
+   *
+   * @param string the method
+   * @param string the url path
+   * @param Callback the request handler for this route
+   */
+  Callback route(std::string httpMethod, std::string url, Callback callback);
+
+protected:
+  struct mg_context *context;
+  char *postData;
+  std::map<std::string, Callback> routes;
+
+private:
+  /**
+   * requestHandler(struct mg_connection *, void *cbdata)
+   *
+   * Handles the incomming request.
+   *
+   * @param conn - the connection information
+   * @param cbdata - pointer to the CivetHandler instance.
+   * @returns 0 if implemented, false otherwise
+   */
+  int requestHandler(struct mg_connection *conn, void *cbdata);
+  static int globalHandler(struct mg_connection *conn, void *cbdata);
+
+  /**
+   * closeHandler(struct mg_connection *)
+   *
+   * Handles closing a request (internal handler)
+   *
+   * @param conn - the connection information
+   */
+  static void closeHandler(struct mg_connection *conn);
+
+  /**
+   * Stores the user provided close handler
+   */
+  void (*userCloseHandler)(struct mg_connection *conn);
+};
+
+class CIVETTA_EXPORT Util {
+public:
+  /**
+   * urlDecode(const char *, size_t, std::string &, bool)
+   *
+   * @param src buffer to be decoded
+   * @param src_len length of buffer to be decoded
+   * @param dst destination string
+   * @is_form_url_encoded true if form url encoded
+   *       form-url-encoded data differs from URI encoding in a way that it
+   *       uses '+' as character for space, see RFC 1866 section 8.2.1
+   *       http://ftp.ics.uci.edu/pub/ietf/html/rfc1866.txt
+   */
+  static void urlDecode(const char *src, size_t src_len, std::string &dst,
+                        bool is_form_url_encoded = true);
+
+  /**
+   * urlDecode(const std::string &, std::string &, bool)
+   *
+   * @param src string to be decoded
+   * @param dst destination string
+   * @is_form_url_encoded true if form url encoded
+   *       form-url-encoded data differs from URI encoding in a way that it
+   *       uses '+' as character for space, see RFC 1866 section 8.2.1
+   *       http://ftp.ics.uci.edu/pub/ietf/html/rfc1866.txt
+   */
+  static void urlDecode(const std::string &src, std::string &dst,
+                        bool is_form_url_encoded = true);
+
+  /**
+   * urlDecode(const char *, std::string &, bool)
+   *
+   * @param src buffer to be decoded (0 terminated)
+   * @param dst destination string
+   * @is_form_url_encoded true if form url encoded
+   *       form-url-encoded data differs from URI encoding in a way that it
+   *       uses '+' as character for space, see RFC 1866 section 8.2.1
+   *       http://ftp.ics.uci.edu/pub/ietf/html/rfc1866.txt
+   */
+  static void urlDecode(const char *src, std::string &dst,
+                        bool is_form_url_encoded = true);
+
+  /**
+   * urlEncode(const char *, size_t, std::string &, bool)
+   *
+   * @param src buffer to be encoded
+   * @param src_len length of buffer to be decoded
+   * @param dst destination string
+   * @append true if string should not be cleared before encoding.
+   */
+  static void urlEncode(const char *src, size_t src_len, std::string &dst,
+                        bool append = false);
+
+  /**
+   * urlEncode(const char *, size_t, std::string &, bool)
+   *
+   * @param src buffer to be encoded (0 terminated)
+   * @param dst destination string
+   * @append true if string should not be cleared before encoding.
+   */
+  static void urlEncode(const char *src, std::string &dst, bool append = false);
+
+  /**
+   * urlEncode(const std::string &, std::string &, bool)
+   *
+   * @param src buffer to be encoded
+   * @param dst destination string
+   * @append true if string should not be cleared before encoding.
+   */
+  static void urlEncode(const std::string &src, std::string &dst,
+                        bool append = false);
+};
+} // namespace Civetta
+#endif // _CIVETTA_H

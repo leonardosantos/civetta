@@ -1,5 +1,6 @@
-#include <civetta\Server.h>
 #include <iostream>
+
+#include "civetta.h"
 
 int main(int argc, char *argv[]) {
 
@@ -7,7 +8,7 @@ int main(int argc, char *argv[]) {
                             0 };
 
   Civetta::Server server(options);
-  server.route("GET", "/civetta",
+  server.route("GET", "/",
                [](Civetta::Request &req,
                   Civetta::Response &res) { res << "Hello World!"; });
 
