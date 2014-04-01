@@ -12,7 +12,7 @@ int main(int argc, char *argv[]) {
                [](Civetta::Request &req,
                   Civetta::Response &res) { res << "Hello World!"; });
 
-  std::cout << "Press <ENTER> to exit" << std::endl;
+  std::cout << "Press <ENTER> to exit";
   std::cin.ignore();
   return 0;
 }
