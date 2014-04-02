@@ -101,7 +101,7 @@ Server::~Server() {
   close();
 }
 
-void Server::setPrefix(string prefix_){
+void Server::setPrefix(string prefix_) {
   prefix = prefix_;
 }
 
@@ -136,33 +136,17 @@ const char *Request::getHeader(const std::string &headerName) {
   return mg_get_header(connection, headerName.c_str());
 }
 
-const char* Request::getPostData(){
+const char *Request::getPostData() {
   return postData;
 }
 
 bool Request::getParam(const char *name, std::string &dst, size_t occurrence) {
-  const char *formParams = NULL;
+  const char *formParams = postData;
   struct mg_request_info *ri = mg_get_request_info(connection);
   assert(ri != NULL);
   Server *me = (Server *)(ri->user_data);
   assert(me != NULL);
 
-  if (postData != NULL) {
-    formParams = postData;
-  } else {
-    const char *con_len_str = mg_get_header(connection, "Content-Length");
-    if (con_len_str) {
-      unsigned long con_len = atoi(con_len_str);
-      if (con_len > 0) {
-        postData = (char *)malloc(con_len);
-        if (postData != NULL) {
-          // malloc may fail for huge requests
-          mg_read(connection, postData, con_len);
-          formParams = postData;
-        }
-      }
-    }
-  }
   if (formParams == NULL)
     // get requests do store html <form> field values in the http query_string
     formParams = ri->query_string;
@@ -228,13 +212,24 @@ int Server::requestHandler(struct mg_connection *conn, void *cbdata) {
 }
 
 Request::Request(struct mg_connection *connection_, smatch matches_)
-    : connection(connection_), matches(matches_), request_info(mg_get_request_info(connection_)), postData(0) {
+    : connection(connection_), matches(matches_), request_info(mg_get_request_info(connection_)), postData(NULL) {
+  {  // postData
+    const char *con_len_str = mg_get_header(connection, "Content-Length");
+    if (con_len_str) {
+      unsigned long con_len = atoi(con_len_str);
+      if (con_len > 0) {
+        postData = (char*)calloc(con_len, sizeof(char));
+        if (postData != NULL)
+          mg_read(connection, postData, con_len);  // malloc may fail for huge requests
+      }
+    }
+  }
 }
 
-Request::~Request(){  
+Request::~Request() {
   if (postData) {
     free(postData);
-    postData = 0;
+    postData = NULL;
   }
 }
 
