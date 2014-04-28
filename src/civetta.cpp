@@ -183,6 +183,15 @@ bool Request::getParam(const char *data, size_t data_len, const char *name, std:
   return false;
 }
 
+std::vector<std::string> Request::getParamArray(const char *name){
+  std::vector<std::string> result;
+  int i=0;
+  std::string buf;
+  while(getParam(name, buf, i++))
+    result.push_back(buf);
+  return result;
+}
+
 Callback Server::route(string httpMethod, string url, Callback callback) {
   string key = httpMethod + ":" + prefix + url + "/?";
   routes[key] = callback;
