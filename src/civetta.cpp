@@ -21,21 +21,22 @@
  */
 
 #include <assert.h>
+#include <map>
 #include "civetta.h"
 
 using namespace std;
 
 namespace Civetta {
 
-void Util::urlDecode(const std::string &src, std::string &dst, bool is_form_url_encoded) {
+void Util::urlDecode(const string &src, string &dst, bool is_form_url_encoded) {
   urlDecode(src.c_str(), src.length(), dst, is_form_url_encoded);
 }
 
-void Util::urlDecode(const char *src, std::string &dst, bool is_form_url_encoded) {
+void Util::urlDecode(const char *src, string &dst, bool is_form_url_encoded) {
   urlDecode(src, strlen(src), dst, is_form_url_encoded);
 }
 
-void Util::urlDecode(const char *src, size_t src_len, std::string &dst, bool is_form_url_encoded) {
+void Util::urlDecode(const char *src, size_t src_len, string &dst, bool is_form_url_encoded) {
   int i, j, a, b;
 #define HEXTOI(x) (isdigit(x) ? x - '0' : x - 'W')
   dst.clear();
@@ -53,15 +54,15 @@ void Util::urlDecode(const char *src, size_t src_len, std::string &dst, bool is_
     }
 }
 
-void Util::urlEncode(const std::string &src, std::string &dst, bool append) {
+void Util::urlEncode(const string &src, string &dst, bool append) {
   urlEncode(src.c_str(), src.length(), dst, append);
 }
 
-void Util::urlEncode(const char *src, std::string &dst, bool append) {
+void Util::urlEncode(const char *src, string &dst, bool append) {
   urlEncode(src, strlen(src), dst, append);
 }
 
-void Util::urlEncode(const char *src, size_t src_len, std::string &dst, bool append) {
+void Util::urlEncode(const char *src, size_t src_len, string &dst, bool append) {
   static const char *dont_escape = "._-$,;~()";
   static const char *hex = "0123456789abcdef";
 
@@ -122,76 +123,6 @@ void Server::close() {
   }
 }
 
-int Request::getCookie(const std::string &cookieName, std::string &cookieValue) {
-  // Maximum cookie length as per microsoft is 4096. http://msdn.microsoft.com/en-us/library/ms178194.aspx
-  char _cookieValue[4096];
-  const char *cookie = mg_get_header(connection, "Cookie");
-  int lRead = mg_get_cookie(cookie, cookieName.c_str(), _cookieValue, sizeof(_cookieValue));
-  cookieValue.clear();
-  cookieValue.append(_cookieValue);
-  return lRead;
-}
-
-const char *Request::getHeader(const std::string &headerName) {
-  return mg_get_header(connection, headerName.c_str());
-}
-
-const char *Request::getPostData() {
-  return postData;
-}
-
-bool Request::getParam(const char *name, std::string &dst, size_t occurrence) {
-  const char *formParams = postData;
-  struct mg_request_info *ri = mg_get_request_info(connection);
-  assert(ri != NULL);
-  Server *me = (Server *)(ri->user_data);
-  assert(me != NULL);
-
-  if (formParams == NULL)
-    // get requests do store html <form> field values in the http query_string
-    formParams = ri->query_string;
-  if (formParams != NULL)
-    return getParam(formParams, strlen(formParams), name, dst, occurrence);
-  return false;
-}
-
-bool Request::getParam(const char *data, size_t data_len, const char *name, std::string &dst, size_t occurrence) {
-  const char *p, *e, *s;
-  size_t name_len;
-
-  dst.clear();
-  if (data == NULL || name == NULL || data_len == 0)
-    return false;
-  name_len = strlen(name);
-  e = data + data_len;
-
-  // data is "var1=val1&var2=val2...". Find variable first
-  for (p = data; p + name_len < e; p++) {
-    if ((p == data || p[-1] == '&') && p[name_len] == '=' && !mg_strncasecmp(name, p, name_len) && 0 == occurrence--) {
-      // Point p to variable value
-      p += name_len + 1;
-      // Point s to the end of the value
-      s = (const char *)memchr(p, '&', (size_t)(e - p));
-      if (s == NULL)
-        s = e;
-      assert(s >= p);
-      // Decode variable into destination buffer
-      Util::urlDecode(p, (size_t)(s - p), dst, true);
-      return true;
-    }
-  }
-  return false;
-}
-
-std::vector<std::string> Request::getParamArray(const char *name){
-  std::vector<std::string> result;
-  int i=0;
-  std::string buf;
-  while(getParam(name, buf, i++))
-    result.push_back(buf);
-  return result;
-}
-
 Callback Server::route(string httpMethod, string url, Callback callback) {
   string key = httpMethod + ":" + prefix + url + "/?";
   routes[key] = callback;
@@ -203,15 +134,15 @@ int Server::requestHandler(struct mg_connection *conn, void *cbdata) {
   assert(request_info != NULL);
   Server *me = (Server *)(request_info->user_data);
   assert(me != NULL);
-
   smatch matches;
   string key, data;
   for (auto it = routes.begin(); it != routes.end(); it++) {
     key = string(request_info->request_method) + ":" + string(request_info->uri);
     if (regex_match(key, matches, regex(it->first))) {
-      Request request(conn, matches);
+      Request *request = new Request(conn);
       Response *response = new Response();
-      it->second(request, *response);
+      request->matches = matches;
+      it->second(*request, *response);
       data = response->getData();
       mg_write(conn, data.c_str(), data.size());
       return 1;
@@ -220,16 +151,84 @@ int Server::requestHandler(struct mg_connection *conn, void *cbdata) {
   return 0;
 }
 
-Request::Request(struct mg_connection *connection_, smatch matches_)
-    : connection(connection_), matches(matches_), request_info(mg_get_request_info(connection_)), postData(NULL) {
-  {  // postData
-    const char *con_len_str = mg_get_header(connection, "Content-Length");
-    if (con_len_str) {
-      unsigned long con_len = atoi(con_len_str);
-      if (con_len > 0) {
-        postData = (char*)calloc(con_len, sizeof(char));
-        if (postData != NULL)
-          mg_read(connection, postData, con_len);  // malloc may fail for huge requests
+int Request::getCookie(const string &cookieName, string &cookieValue) {
+  // Maximum cookie length as per microsoft is 4096. http://msdn.microsoft.com/en-us/library/ms178194.aspx
+  char _cookieValue[4096];
+  const char *cookie = mg_get_header(connection, "Cookie");
+  int lRead = mg_get_cookie(cookie, cookieName.c_str(), _cookieValue, sizeof(_cookieValue));
+  cookieValue.clear();
+  cookieValue.append(_cookieValue);
+  return lRead;
+}
+
+const char *Request::getHeader(const string &headerName) {
+  return mg_get_header(connection, headerName.c_str());
+}
+
+const char *Request::getPostData() {
+  return postData;
+}
+
+bool Request::getParam(const char *name, string &dst, size_t occurrence) {
+  auto i = values.find(name);
+  if(i!=values.end()){
+    dst = i->second[occurrence];
+    return true;
+  }
+  return false;
+}
+
+vector<string> Request::getParamArray(const char *name) {
+  return values[name];
+}
+
+Request::Request(struct mg_connection *connection_)
+    : connection(connection_), request_info(mg_get_request_info(connection_)), postData(NULL), matches() {
+  // postData
+  unsigned long con_len;
+  const char *con_len_str = mg_get_header(connection, "Content-Length");
+  if (con_len_str) {
+    con_len = atoi(con_len_str);
+    if (con_len > 0) {
+      postData = (char *)calloc(con_len, sizeof(char));
+      if (postData != NULL)
+        mg_read(connection, postData, con_len);  // malloc may fail for huge requests
+    }
+  }
+
+  if (postData) {
+    string data = string(postData).substr(0, con_len), content_type = mg_get_header(connection, "Content-Type"), block,
+           boundary, block_header, block_body, delim;
+    smatch field_name;
+    regex name_regex;
+    int start = 0, end = 0, delim_pos = 0, type;
+    if ((type = content_type.find("multipart/form-data")) >= 0) {
+      data = "\r\n" + data;
+      boundary = "\r\n--" + content_type.substr(content_type.find("boundary=") + 9);  // size of "boundary="
+      name_regex = regex("name=\"([^\"]+)\"");
+      delim = "\r\n\r\n";
+    } else {
+      boundary = "&";
+      name_regex = regex("(.+)");
+      delim = "=";
+    }
+    while (start >= 0) {
+      end = data.find(boundary, start);
+      if(end==start){
+        start += boundary.size();
+        end = data.find(boundary, start);
+      }
+      block = data.substr(start, end - start);
+      start = end;
+      delim_pos = block.find(delim);
+      if (delim_pos < 0)
+        continue;
+      block_header = block.substr(0, delim_pos);
+      block_body = block.substr(delim_pos + delim.size());
+      if (regex_search(block_header, field_name, name_regex)) {
+        if (values.find(field_name[1]) == values.end())
+          values[field_name[1]] = vector<string>();
+        values[field_name[1]].push_back(block_body);
       }
     }
   }

@@ -52,6 +52,8 @@
 
 namespace Civetta {
 
+class Server;
+
 /**
   Request is a wrapper for the clients requests
 */
@@ -60,10 +62,8 @@ class CIVETTA_EXPORT Request {
   /**
     Request constructor.
     @param connection the request connection
-    @param matches the url regex match of the route pattern over the requested
-    uri
   */
-  Request(struct mg_connection *connection, std::smatch matches);
+  Request(struct mg_connection *connection);
   virtual ~Request();
 
   /**
@@ -116,41 +116,18 @@ class CIVETTA_EXPORT Request {
   */
   std::vector<std::string> getParamArray(const char *name);
 
-  /**
-     Gets a param.
-     Returns a query paramter contained in the supplied buffer.
-     The occurance value is a zero-based index of a particular key name.
-     This should nto be confused with the index over all of the keys.
-     @param data the query string
-     @param name the key to search for
-     @param the destination string
-     @param occurrence the occurrence of the selected name in the query (0 based).
-     @return true of key was found
-   */
-  static bool getParam(const std::string &data, const char *name, std::string &dst, size_t occurrence = 0) {
-    return getParam(data.c_str(), data.length(), name, dst, occurrence);
-  }
-
-  /**
-     Gets a param.
-     Returns a query paramter contained in the supplied buffer.
-     The occurance value is a zero-based index of a particular key name.
-     This should nto be confused with the index over all of the keys.
-     @param data the query string
-     @param length length of the query string
-     @param name the key to search for
-     @param the destination string
-     @param occurrence the occurrence of the selected name in the query (0 based).
-     @return true of key was found
-   */
-  static bool getParam(const char *data, size_t data_len, const char *name, std::string &dst, size_t occurrence = 0);
-
   const char* getPostData();
+
+  std::vector<std::string> getUploads(std::string destination_path);
 
  protected:
   char *postData;
-  std::smatch matches;
+  std::map<std::string, std::vector<std::string> > values;
   struct mg_connection *connection;
+  std::smatch matches;
+  std::vector<std::string> upload_filepaths;
+
+  friend class Server;
 };
 
 class CIVETTA_EXPORT Response : public std::ostringstream {
@@ -251,11 +228,14 @@ class CIVETTA_EXPORT Server {
      Sets the routes prefix.
    */
   void setPrefix(std::string prefix);
+  void setUploadDestination(std::string upload_destination);
+  std::string getUploadDestination() const;
 
  protected:
   struct mg_context *context;
   std::map<std::string, Callback> routes;
   std::string prefix;
+  std::string upload_destination;
 
  private:
   /**
@@ -273,10 +253,13 @@ class CIVETTA_EXPORT Server {
    */
   static void closeHandler(struct mg_connection *conn);
 
+  static void uploadHandler(struct mg_connection *conn, const char *file_name);
+
   /**
      Stores the user provided close handler
    */
   void (*userCloseHandler)(struct mg_connection *conn);
+  void (*userUploadHandler)(struct mg_connection *conn, const char *filename);
 };
 
 class CIVETTA_EXPORT Util {
