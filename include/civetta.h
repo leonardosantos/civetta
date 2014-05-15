@@ -115,6 +115,28 @@ class CIVETTA_EXPORT Request {
      @return true of key was found
   */
   std::vector<std::string> getParamArray(const char *name);
+  
+  /**
+     Gets a query string param.
+     Returns a query paramter contained in the supplied buffer.
+     The occurence value is a zero-based index of a particular key name.
+     This should not be confused with the index over all of the keys.
+     @param name the key to search for
+     @param the destination string
+     @param occurrence the occurrence of the selected name in the query (0 based).
+     @return true of key was found
+  */
+  bool getQueryParam(const char *name, std::string &dst, size_t occurrence = 0);
+
+  /**
+     Gets a query string param as Array.
+     Returns array of strings containing the values passed in the varios occurrences of the param.
+     @param name the key to search for
+     @param the destination string
+     @param occurrence the occurrence of the selected name in the query (0 based).
+     @return true of key was found
+  */
+  std::vector<std::string> getQueryParamArray(const char *name);
 
   const char* getPostData();
 
@@ -123,6 +145,7 @@ class CIVETTA_EXPORT Request {
  protected:
   char *postData;
   std::map<std::string, std::vector<std::string> > values;
+  std::map<std::string, std::vector<std::string> > query;
   struct mg_connection *connection;
   std::smatch matches;
   std::vector<std::string> upload_filepaths;

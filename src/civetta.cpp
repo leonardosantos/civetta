@@ -171,7 +171,7 @@ const char *Request::getPostData() {
 
 bool Request::getParam(const char *name, string &dst, size_t occurrence) {
   auto i = values.find(name);
-  if(i!=values.end()){
+  if (i != values.end()) {
     dst = i->second[occurrence];
     return true;
   }
@@ -180,6 +180,58 @@ bool Request::getParam(const char *name, string &dst, size_t occurrence) {
 
 vector<string> Request::getParamArray(const char *name) {
   return values[name];
+}
+
+bool Request::getQueryParam(const char *name, string &dst, size_t occurrence) {
+  auto i = query.find(name);
+  if (i != query.end()) {
+    dst = i->second[occurrence];
+    return true;
+  }
+  return false;
+}
+
+vector<string> Request::getQueryParamArray(const char *name) {
+  return query[name];
+}
+
+map<string, vector<string> > parse_values(string data, string boundary, bool multipart = false) {
+  map<string, vector<string> > result;
+  string block, block_header, block_body, delim;
+  smatch field_name;
+  regex name_regex;
+  int start = 0, end = 0, delim_pos = 0, type;
+  if (multipart) {
+    data = "\r\n" + data;
+    boundary = "\r\n--" + boundary;
+    name_regex = regex("name=\"([^\"]+)\"");
+    delim = "\r\n\r\n";
+  } else {
+    name_regex = regex("(.+)");
+    delim = "=";
+  }
+  while (start >= 0) {
+    end = data.find(boundary, start);
+    if (end == start) {
+      start += boundary.size();
+      end = data.find(boundary, start);
+    }
+    block = data.substr(start, end - start);
+    start = end;
+    delim_pos = block.find(delim);
+    if (delim_pos < 0)
+      continue;
+    block_header = block.substr(0, delim_pos);
+    block_body = block.substr(delim_pos + delim.size());
+    if (regex_search(block_header, field_name, name_regex)) {
+      if (result.find(field_name[1]) == result.end())
+        result[field_name[1]] = vector<string>();
+      if (multipart)
+        Util::urlDecode(block_body, block_body);
+      result[field_name[1]].push_back(block_body);
+    }
+  }
+  return result;
 }
 
 Request::Request(struct mg_connection *connection_)
@@ -195,42 +247,15 @@ Request::Request(struct mg_connection *connection_)
         mg_read(connection, postData, con_len);  // malloc may fail for huge requests
     }
   }
-
-  if (postData) {
-    string data = string(postData).substr(0, con_len), content_type = mg_get_header(connection, "Content-Type"), block,
-           boundary, block_header, block_body, delim;
-    smatch field_name;
-    regex name_regex;
-    int start = 0, end = 0, delim_pos = 0, type;
-    if ((type = content_type.find("multipart/form-data")) >= 0) {
-      data = "\r\n" + data;
-      boundary = "\r\n--" + content_type.substr(content_type.find("boundary=") + 9);  // size of "boundary="
-      name_regex = regex("name=\"([^\"]+)\"");
-      delim = "\r\n\r\n";
-    } else {
-      boundary = "&";
-      name_regex = regex("(.+)");
-      delim = "=";
-    }
-    while (start >= 0) {
-      end = data.find(boundary, start);
-      if(end==start){
-        start += boundary.size();
-        end = data.find(boundary, start);
-      }
-      block = data.substr(start, end - start);
-      start = end;
-      delim_pos = block.find(delim);
-      if (delim_pos < 0)
-        continue;
-      block_header = block.substr(0, delim_pos);
-      block_body = block.substr(delim_pos + delim.size());
-      if (regex_search(block_header, field_name, name_regex)) {
-        if (values.find(field_name[1]) == values.end())
-          values[field_name[1]] = vector<string>();
-        values[field_name[1]].push_back(block_body);
-      }
-    }
+  const char* temp = mg_get_request_info(connection)->query_string;
+  if(temp!=NULL)
+    query = parse_values(temp, "&");
+  
+  temp = mg_get_header(connection, "Content-Type");
+  if(temp!=NULL){
+    string content_type = temp;
+    values = parse_values(string(postData).substr(0, con_len), content_type.substr(content_type.find("boundary=") + 9),
+                          content_type.find("multipart/form-data") >= 0);
   }
 }
 
