@@ -227,7 +227,7 @@ map<string, vector<string> > parse_values(string data, string boundary, bool mul
       if (result.find(field_name[1]) == result.end())
         result[field_name[1]] = vector<string>();
       if (multipart)
-        Util::urlDecode(block_body, block_body);
+        Util::urlDecode(std::string(block_body), block_body);
       result[field_name[1]].push_back(block_body);
     }
   }
